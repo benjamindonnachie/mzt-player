@@ -37,6 +37,7 @@ func prepareTape(_ source: URL, conventional: Bool, inverted: Bool) throws -> Ta
 @MainActor
 final class PlayerModel: ObservableObject {
     @Published var source: URL?
+    @Published private(set) var tapeHeader: TapeHeader?
     @Published var devices: [OutputDevice] = []
     @Published var selectedUID = ""
     @Published var conventional = true
@@ -132,8 +133,15 @@ final class PlayerModel: ObservableObject {
             errorMessage = "Choose an MZT or MZF tape image."
             return
         }
-        stop()
-        source = url
+        do {
+            let header = try TapeHeader.read(from: url)
+            stop()
+            tapeHeader = header
+            source = url
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
         duration = 0
         status = "Ready. Set the Sharp to load from tape, then press Play."
     }

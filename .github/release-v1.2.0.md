@@ -1,0 +1,3 @@
+MZT Player now shows the embedded filename and declared type of the first Sharp MZT/MZF tape record as soon as you select a file. A loading hint distinguishes machine code (usually loaded from the ROM monitor) from MZ-80 and MZ-700 BASIC programs (start a compatible interpreter first). Data and unknown types are labelled separately. The header cannot identify the exact interpreter version required.
+
+Download **MZT-Player-1.2.0-macOS-arm64.zip** for Apple Silicon Macs running macOS 13 or later. **SHA256SUMS.txt** contains the archive checksum. The build is ad hoc signed and not Apple-notarised.

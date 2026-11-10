@@ -10,7 +10,11 @@ struct MZTPlayerApp: App {
         // Diagnostic conversion never starts playback or alters system audio settings.
         if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--check" {
             do {
-                let tape = try prepareTape(URL(fileURLWithPath: CommandLine.arguments[2]), conventional: true, inverted: false)
+                let url = URL(fileURLWithPath: CommandLine.arguments[2])
+                let header = try TapeHeader.read(from: url)
+                let tape = try prepareTape(url, conventional: true, inverted: false)
+                print("First tape record: \(header.filename ?? "(unnamed)") | \(header.typeDescription)")
+                print(header.loadingHint)
                 print("Audio: \(tape.totalFrames) frames, \(mzt_sample_rate()) Hz; direct PCM streaming")
                 for device in AudioDevices.outputs() { print("Output: \(device.name) [\(device.uid)]") }
                 exit(0)
@@ -33,7 +37,7 @@ struct MZTPlayerApp: App {
                 Button("About MZT Player") {
                     NSApplication.shared.orderFrontStandardAboutPanel(options: [
                         .applicationName: "MZT Player",
-                        .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.1.0",
+                        .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.0",
                         .credits: NSAttributedString(string: "Tape encoding implemented from the documented Sharp MZ PWM format.\nProtocol references are included with the source.")
                     ])
                 }
@@ -70,6 +74,14 @@ struct PlayerView: View {
                             .fontWeight(.medium).lineLimit(2).id(model.source)
                         Text(model.source?.deletingLastPathComponent().path ?? "Select an .mzt or .mzf file")
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                        if let header = model.tapeHeader {
+                            Text("First tape record: \(header.filename ?? "(unnamed)")")
+                                .font(.callout.weight(.medium))
+                            Text(header.typeDescription).font(.caption)
+                            Text(header.loadingHint)
+                                .font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     Spacer()
                     Button("Choose File…", action: model.chooseFile).disabled(model.busy)
