@@ -4,7 +4,7 @@ Native macOS interface for playing Sharp MZT/MZF cassette images through a chose
 
 ## Run
 
-For Apple Silicon Macs, download `MZT-Player-1.2.0-macOS-arm64.zip` from the repository's Releases page. Extract it and move **MZT Player.app** to Applications. The release includes `SHA256SUMS.txt` for checking the archive.
+For Apple Silicon Macs, download `MZT-Player-1.3.0-macOS-arm64.zip` from the repository's Releases page. Extract it and move **MZT Player.app** to Applications. The release includes `SHA256SUMS.txt` for checking the archive.
 
 For a local build, run `./build.sh` and open `build/MZT Player.app`. `build/MZT Player.zip` is packaged before copying into a cloud-backed folder, avoiding Finder metadata that can interfere with signature verification.
 
@@ -13,7 +13,7 @@ For a local build, run `./build.sh` and open `build/MZT Player.app`. `build/MZT 
 3. Set the Sharp to load from tape, then press Play.
 4. Adjust **Level** to suit the cassette interface. It starts at 50%.
 
-The file panel shows the embedded name and type of the first tape record, with a loading hint. Machine-code records usually load from the ROM monitor. BASIC program records need a compatible interpreter first; data records and unknown types do not imply a direct loader. The type describes the header's declared format and does not establish compatibility with a particular Sharp model or BASIC version. Bytes outside printable ASCII in the tape name are shown in hexadecimal.
+The file panel lists every tape record in order, showing its embedded name, declared type and loading hint. Multi-record images use a scrollable list. Machine-code records usually load from the ROM monitor. BASIC program records need a compatible interpreter first; data records and unknown types do not imply a direct loader. The type describes the header's declared format and does not establish compatibility with a particular Sharp model or BASIC version. Bytes outside printable ASCII in the tape name are shown in hexadecimal.
 
 Pause preserves encoder position. Stop rewinds. Pausing within a block can disrupt the Sharp's loader, so restart the load if necessary.
 

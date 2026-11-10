@@ -20,11 +20,10 @@ final class TapeStream: @unchecked Sendable {
 }
 
 func prepareTape(_ source: URL, conventional: Bool, inverted: Bool) throws -> TapeStream {
-    let attributes = try FileManager.default.attributesOfItem(atPath: source.path)
-    guard let size = attributes[.size] as? NSNumber, size.intValue <= 1024 * 1024 else {
-        throw PlayerError(message: "The tape image exceeds the 1 MiB safety limit.")
-    }
-    let data = try Data(contentsOf: source)
+    try prepareTape(TapeHeader.readImage(from: source), conventional: conventional, inverted: inverted)
+}
+
+func prepareTape(_ data: Data, conventional: Bool, inverted: Bool) throws -> TapeStream {
     var error = [CChar](repeating: 0, count: 512)
     let result = data.withUnsafeBytes { bytes in
         mzt_create(bytes.bindMemory(to: UInt8.self).baseAddress, data.count,
@@ -37,7 +36,7 @@ func prepareTape(_ source: URL, conventional: Bool, inverted: Bool) throws -> Ta
 @MainActor
 final class PlayerModel: ObservableObject {
     @Published var source: URL?
-    @Published private(set) var tapeHeader: TapeHeader?
+    @Published private(set) var tapeHeaders: [TapeHeader] = []
     @Published var devices: [OutputDevice] = []
     @Published var selectedUID = ""
     @Published var conventional = true
@@ -134,9 +133,9 @@ final class PlayerModel: ObservableObject {
             return
         }
         do {
-            let header = try TapeHeader.read(from: url)
+            let headers = try TapeHeader.records(in: TapeHeader.readImage(from: url))
             stop()
-            tapeHeader = header
+            tapeHeaders = headers
             source = url
         } catch {
             errorMessage = error.localizedDescription

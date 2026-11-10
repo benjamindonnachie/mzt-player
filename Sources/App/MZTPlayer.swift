@@ -11,10 +11,13 @@ struct MZTPlayerApp: App {
         if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--check" {
             do {
                 let url = URL(fileURLWithPath: CommandLine.arguments[2])
-                let header = try TapeHeader.read(from: url)
-                let tape = try prepareTape(url, conventional: true, inverted: false)
-                print("First tape record: \(header.filename ?? "(unnamed)") | \(header.typeDescription)")
-                print(header.loadingHint)
+                let data = try TapeHeader.readImage(from: url)
+                let headers = try TapeHeader.records(in: data)
+                let tape = try prepareTape(data, conventional: true, inverted: false)
+                for (index, header) in headers.enumerated() {
+                    print("Tape record \(index + 1): \(header.filename ?? "(unnamed)") | \(header.typeDescription)")
+                    print(header.loadingHint)
+                }
                 print("Audio: \(tape.totalFrames) frames, \(mzt_sample_rate()) Hz; direct PCM streaming")
                 for device in AudioDevices.outputs() { print("Output: \(device.name) [\(device.uid)]") }
                 exit(0)
@@ -37,7 +40,7 @@ struct MZTPlayerApp: App {
                 Button("About MZT Player") {
                     NSApplication.shared.orderFrontStandardAboutPanel(options: [
                         .applicationName: "MZT Player",
-                        .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.0",
+                        .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.3.0",
                         .credits: NSAttributedString(string: "Tape encoding implemented from the documented Sharp MZ PWM format.\nProtocol references are included with the source.")
                     ])
                 }
@@ -52,6 +55,16 @@ struct PlayerView: View {
     private func clock(_ seconds: Double) -> String {
         let total = Int(seconds)
         return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+
+    private func recordDetails(_ header: TapeHeader, number: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Record \(number): \(header.filename ?? "(unnamed)")")
+                .font(.callout.weight(.medium))
+            Text(header.typeDescription).font(.caption)
+            Text(header.loadingHint).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     var body: some View {
@@ -74,18 +87,26 @@ struct PlayerView: View {
                             .fontWeight(.medium).lineLimit(2).id(model.source)
                         Text(model.source?.deletingLastPathComponent().path ?? "Select an .mzt or .mzf file")
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                        if let header = model.tapeHeader {
-                            Text("First tape record: \(header.filename ?? "(unnamed)")")
-                                .font(.callout.weight(.medium))
-                            Text(header.typeDescription).font(.caption)
-                            Text(header.loadingHint)
-                                .font(.caption).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
                     }
                     Spacer()
                     Button("Choose File…", action: model.chooseFile).disabled(model.busy)
                 }.padding(10)
+                if model.tapeHeaders.count > 1 {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Tape records (\(model.tapeHeaders.count))").font(.callout.weight(.medium))
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 10) {
+                                ForEach(model.tapeHeaders.indices, id: \.self) { index in
+                                    recordDetails(model.tapeHeaders[index], number: index + 1)
+                                }
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }.frame(height: 144).id(model.source)
+                    }.padding(10)
+                } else if let header = model.tapeHeaders.first {
+                    recordDetails(header, number: 1)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                }
             }
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
