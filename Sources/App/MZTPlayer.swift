@@ -8,12 +8,25 @@ struct MZTPlayerApp: App {
 
     init() {
         // Diagnostic conversion never starts playback or alters system audio settings.
-        if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--check" {
+        let arguments = CommandLine.arguments
+        if arguments.count >= 2, arguments[1] == "--check" {
             do {
-                let url = URL(fileURLWithPath: CommandLine.arguments[2])
+                guard arguments.count == 3 || (arguments.count == 5 && arguments[3] == "--record") else {
+                    throw PlayerError(message: "Usage: --check <tape image> [--record <number>]")
+                }
+                let url = URL(fileURLWithPath: arguments[2])
                 let data = try TapeHeader.readImage(from: url)
                 let headers = try TapeHeader.records(in: data)
-                let tape = try prepareTape(data, conventional: true, inverted: false)
+                let playbackData: Data
+                if arguments.count == 5 {
+                    guard let number = Int(arguments[4]), (1...headers.count).contains(number) else {
+                        throw PlayerError(message: "Choose a record number from 1 to \(headers.count).")
+                    }
+                    playbackData = data[headers[number - 1].recordRange]
+                } else {
+                    playbackData = data
+                }
+                let tape = try prepareTape(playbackData, conventional: true, inverted: false)
                 for (index, header) in headers.enumerated() {
                     print("Tape record \(index + 1): \(header.filename ?? "(unnamed)") | \(header.typeDescription)")
                     print(header.loadingHint)
@@ -40,7 +53,7 @@ struct MZTPlayerApp: App {
                 Button("About MZT Player") {
                     NSApplication.shared.orderFrontStandardAboutPanel(options: [
                         .applicationName: "MZT Player",
-                        .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.3.0",
+                        .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.4.0",
                         .credits: NSAttributedString(string: "Tape encoding implemented from the documented Sharp MZ PWM format.\nProtocol references are included with the source.")
                     ])
                 }
@@ -94,11 +107,33 @@ struct PlayerView: View {
                 if model.tapeHeaders.count > 1 {
                     Divider()
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Tape records (\(model.tapeHeaders.count))").font(.callout.weight(.medium))
+                        HStack {
+                            Text("Tape records (\(model.tapeHeaders.count))").font(.callout.weight(.medium))
+                            Spacer()
+                            Button(model.selectedRecord == nil ? "Whole tape selected" : "Select whole tape") {
+                                model.selectRecord(nil)
+                            }.disabled(model.active || model.busy || model.selectedRecord == nil)
+                        }
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 10) {
                                 ForEach(model.tapeHeaders.indices, id: \.self) { index in
-                                    recordDetails(model.tapeHeaders[index], number: index + 1)
+                                    Button {
+                                        model.selectRecord(index)
+                                    } label: {
+                                        HStack(alignment: .top, spacing: 10) {
+                                            Image(systemName: model.selectedRecord == index ? "largecircle.fill.circle" : "circle")
+                                                .accessibilityHidden(true)
+                                            recordDetails(model.tapeHeaders[index], number: index + 1)
+                                            Spacer(minLength: 0)
+                                        }
+                                        .padding(6)
+                                        .contentShape(Rectangle())
+                                        .background(model.selectedRecord == index ? Color.accentColor.opacity(0.16) : Color.clear,
+                                                    in: RoundedRectangle(cornerRadius: 6))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityAddTraits(model.selectedRecord == index ? .isSelected : [])
+                                    .disabled(model.active || model.busy)
                                 }
                             }.frame(maxWidth: .infinity, alignment: .leading)
                         }.frame(height: 144).id(model.source)
@@ -162,7 +197,7 @@ struct PlayerView: View {
                 }.font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
             }
             HStack(spacing: 12) {
-                Button(model.paused ? "Resume" : "Play") { model.play() }
+                Button(model.paused ? "Resume" : model.selectedRecord.map { "Play Record \($0 + 1)" } ?? "Play") { model.play() }
                     .buttonStyle(.borderedProminent).keyboardShortcut(.space, modifiers: [])
                     .disabled(model.source == nil || model.selectedUID.isEmpty || model.playing || model.busy)
                 Button("Pause", action: model.pause).disabled(!model.playing)

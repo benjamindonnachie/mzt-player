@@ -19,10 +19,6 @@ final class TapeStream: @unchecked Sendable {
     var playedFrames: UInt64 { mzt_played_frames(handle) }
 }
 
-func prepareTape(_ source: URL, conventional: Bool, inverted: Bool) throws -> TapeStream {
-    try prepareTape(TapeHeader.readImage(from: source), conventional: conventional, inverted: inverted)
-}
-
 func prepareTape(_ data: Data, conventional: Bool, inverted: Bool) throws -> TapeStream {
     var error = [CChar](repeating: 0, count: 512)
     let result = data.withUnsafeBytes { bytes in
@@ -37,6 +33,8 @@ func prepareTape(_ data: Data, conventional: Bool, inverted: Bool) throws -> Tap
 final class PlayerModel: ObservableObject {
     @Published var source: URL?
     @Published private(set) var tapeHeaders: [TapeHeader] = []
+    @Published private(set) var selectedRecord: Int?
+    private var tapeImage: Data?
     @Published var devices: [OutputDevice] = []
     @Published var selectedUID = ""
     @Published var conventional = true
@@ -133,8 +131,11 @@ final class PlayerModel: ObservableObject {
             return
         }
         do {
-            let headers = try TapeHeader.records(in: TapeHeader.readImage(from: url))
+            let image = try TapeHeader.readImage(from: url)
+            let headers = try TapeHeader.records(in: image)
             stop()
+            tapeImage = image
+            selectedRecord = nil
             tapeHeaders = headers
             source = url
         } catch {
@@ -145,11 +146,23 @@ final class PlayerModel: ObservableObject {
         status = "Ready. Set the Sharp to load from tape, then press Play."
     }
 
+    func selectRecord(_ index: Int?) {
+        guard !active, !busy, index.map(tapeHeaders.indices.contains) ?? true else { return }
+        selectedRecord = index
+        duration = 0
+        elapsed = 0
+        status = index.map { "Ready to play record \($0 + 1)." } ?? "Ready to play the whole tape."
+    }
+
+    private var playbackStatus: String {
+        selectedRecord.map { "Playing record \($0 + 1)." } ?? "Playing tape."
+    }
+
     func play() {
         if paused {
             do {
                 try engine?.start()
-                paused = false; playing = true; status = "Playing tape."
+                paused = false; playing = true; status = playbackStatus
                 do { try monitorEngine?.start() }
                 catch {
                     monitorEngine?.stop(); monitorEngine = nil; monitorDevice = nil
@@ -158,25 +171,26 @@ final class PlayerModel: ObservableObject {
             } catch { stop(); errorMessage = error.localizedDescription }
             return
         }
-        guard !busy, !playing, let source else { return }
+        guard !busy, !playing, let tapeImage else { return }
         guard let device = devices.first(where: { $0.uid == selectedUID }) else {
             errorMessage = "Choose an available output device."
             return
         }
         busy = true
         status = "Preparing tape audio…"
+        let data = selectedRecord.map { tapeImage[tapeHeaders[$0].recordRange] } ?? tapeImage
         let conventional = conventional, inverted = inverted
         Task {
             do {
                 let tape = try await Task.detached(priority: .userInitiated) {
-                    try prepareTape(source, conventional: conventional, inverted: inverted)
+                    try prepareTape(data, conventional: conventional, inverted: inverted)
                 }.value
                 // Resolve the UID again because hardware IDs can change during conversion.
                 guard let current = AudioDevices.outputs().first(where: { $0.uid == device.uid }) else {
                     throw PlayerError(message: "The selected output device was disconnected.")
                 }
                 try startAudio(tape, device: current.id)
-                status = "Playing tape."
+                status = playbackStatus
             } catch {
                 stop()
                 errorMessage = error.localizedDescription

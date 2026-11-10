@@ -6,10 +6,11 @@ struct TapeHeader {
 
     let filename: String?
     let attribute: UInt8
+    let recordRange: Range<Int>
 
-    private init?(bytes: Data.SubSequence) {
-        guard bytes.count == Self.headerSize, let attribute = bytes.first else { return nil }
-        self.attribute = attribute
+    private init(bytes: Data.SubSequence, recordRange: Range<Int>) {
+        self.attribute = bytes[bytes.startIndex]
+        self.recordRange = recordRange
         // Keep the name field separate from the size field, even without a terminator.
         let name = bytes.dropFirst().prefix(17).prefix { $0 != 0x0d && $0 != 0 }
         let display = name.map { byte in
@@ -35,17 +36,18 @@ struct TapeHeader {
         var offset = bytes.startIndex
         repeat {
             let number = records.count + 1
-            guard bytes.endIndex - offset >= headerSize,
-                  let header = TapeHeader(bytes: bytes[offset..<(offset + headerSize)]) else {
+            guard bytes.endIndex - offset >= headerSize else {
                 throw invalidImage("Tape record \(number) does not contain a complete 128-byte header.")
             }
             let payloadSize = Int(bytes[offset + 0x12]) | (Int(bytes[offset + 0x13]) << 8)
+            let start = offset
             offset += headerSize
             guard bytes.endIndex - offset >= payloadSize else {
                 throw invalidImage("Tape record \(number) has a truncated payload: expected \(payloadSize) bytes, found \(bytes.endIndex - offset).")
             }
-            records.append(header)
-            offset += payloadSize
+            let end = offset + payloadSize
+            records.append(TapeHeader(bytes: bytes[start..<offset], recordRange: start..<end))
+            offset = end
         } while offset < bytes.endIndex
         return records
     }
