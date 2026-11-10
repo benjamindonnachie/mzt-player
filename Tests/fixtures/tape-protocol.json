@@ -1,0 +1,16 @@
+{
+  "sample_rate": 48000,
+  "short_high_us": 240,
+  "short_low_us": 264,
+  "long_high_us": 464,
+  "long_low_us": 494,
+  "header_leader_pulses": 22000,
+  "body_leader_pulses": 11000,
+  "duplicate_gap_pulses": 256,
+  "header_marker_pulses": 40,
+  "body_marker_pulses": 20,
+  "payload_hex": "8001a5ff",
+  "payload_bits": ["10000000", "00000001", "10100101", "11111111"],
+  "payload_checksum_hex": "000e",
+  "header_checksum_hex": "0002"
+}

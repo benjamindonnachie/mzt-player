@@ -1,0 +1,9 @@
+MZT Player 1.1.0
+
+The current tape encoder is implemented from the documented Sharp MZ PWM
+protocol. No third-party tape converter source or executable is included or
+required to build, test or run this version. See docs/tape-format.md in the
+source repository for the protocol references and implementation choices.
+
+The Sharp MZ ship emblem is based on Sharp's historical Argo mark. The mark
+belongs to Sharp. Its use here does not imply endorsement by Sharp.
