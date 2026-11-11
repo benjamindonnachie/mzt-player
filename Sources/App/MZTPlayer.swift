@@ -6,6 +6,10 @@ import AVFoundation
 struct MZTPlayerApp: App {
     @StateObject private var model = PlayerModel()
 
+    private var installedVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+    }
+
     init() {
         // Diagnostic conversion never starts playback or alters system audio settings.
         let arguments = CommandLine.arguments
@@ -38,6 +42,40 @@ struct MZTPlayerApp: App {
         }
     }
 
+    @MainActor
+    private func checkForUpdates() {
+        guard !model.checkingForUpdates else { return }
+        model.checkingForUpdates = true
+        let installed = installedVersion
+        Task { @MainActor in
+            defer { model.checkingForUpdates = false }
+            let alert = NSAlert()
+            do {
+                if let update = try await ReleaseUpdates.check(installed: installed) {
+                    alert.messageText = "MZT Player \(update.version) is available"
+                    alert.informativeText = update.hasDownload
+                        ? "You have version \(installed). Download the new version from GitHub?"
+                        : "You have version \(installed). There is no matching download for this build’s architecture. View the release on GitHub?"
+                    alert.addButton(withTitle: update.hasDownload ? "Download" : "View Release")
+                    alert.addButton(withTitle: "Not Now")
+                    if alert.runModal() == .alertFirstButtonReturn {
+                        NSWorkspace.shared.open(update.url)
+                    }
+                } else {
+                    alert.messageText = "No update available"
+                    alert.informativeText = "You have MZT Player \(installed)."
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                }
+            } catch {
+                alert.messageText = "Couldn’t check for updates"
+                alert.informativeText = error.localizedDescription
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+        }
+    }
+
     var body: some Scene {
         WindowGroup("MZT Player") {
             PlayerView(model: model)
@@ -53,10 +91,13 @@ struct MZTPlayerApp: App {
                 Button("About MZT Player") {
                     NSApplication.shared.orderFrontStandardAboutPanel(options: [
                         .applicationName: "MZT Player",
-                        .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.5.1",
+                        .applicationVersion: installedVersion,
                         .credits: NSAttributedString(string: "Tape encoding implemented from the documented Sharp MZ PWM format.\nProtocol references are included with the source.")
                     ])
                 }
+                Button(model.checkingForUpdates ? "Checking for Updates…" : "Check for Updates…") {
+                    checkForUpdates()
+                }.disabled(model.checkingForUpdates)
             }
         }
     }

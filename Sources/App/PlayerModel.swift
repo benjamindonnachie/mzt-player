@@ -58,6 +58,7 @@ final class PlayerModel: ObservableObject {
     @Published private(set) var defaultOutputID: AudioDeviceID = 0
     @Published var monitorStatus = "Local monitor: quiet playback on the default output, when different."
     @Published var busy = false
+    @Published var checkingForUpdates = false
     @Published var playing = false
     @Published var paused = false
     @Published var elapsed: Double = 0

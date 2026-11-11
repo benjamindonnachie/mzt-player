@@ -4,7 +4,7 @@ Native macOS interface for playing Sharp MZT/MZF cassette images through a chose
 
 ## Run
 
-For Apple Silicon Macs, download `MZT-Player-1.5.1-macOS-arm64.zip` from the repository's Releases page. Extract it and move **MZT Player.app** to Applications. The release includes `SHA256SUMS.txt` for checking the archive.
+For Apple Silicon Macs, download `MZT-Player-1.6.0-macOS-arm64.zip` from the repository's Releases page. Extract it and move **MZT Player.app** to Applications. The release includes `SHA256SUMS.txt` for checking the archive.
 
 For a local build, run `./build.sh` and open `build/MZT Player.app`. `build/MZT Player.zip` is packaged before copying into a cloud-backed folder, avoiding Finder metadata that can interfere with signature verification.
 
@@ -20,6 +20,10 @@ By default, **Between records** asks before the next record, with **Continue** a
 Pause preserves encoder position. Stop rewinds. Pausing within a block can disrupt the Sharp's loader, so restart the load if necessary.
 
 **Conventional** uses documented leaders and duplicate header/data blocks. **Short transfer** is the app default and uses single copies and approximately three seconds of leader before both the header and the data block. Both use the documented MZ-700 PWM timing profile. The polarity switch accommodates interfaces that invert the signal. Turbo loaders and speed corrections are not included.
+
+## Updates
+
+Choose **MZT Player → Check for Updates…** to compare your installed version with the latest stable GitHub release. If a newer release is available, the app asks before opening its download in your browser. The app does not download or install updates in the background.
 
 ## Quiet monitor
 
