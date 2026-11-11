@@ -29,16 +29,29 @@ func prepareTape(_ data: Data, conventional: Bool, inverted: Bool) throws -> Tap
     return TapeStream(handle)
 }
 
+enum RecordTransition: String, CaseIterable, Identifiable {
+    case confirm = "Ask before next record"
+    case timed = "Wait 5 seconds"
+
+    var id: Self { self }
+}
+
 @MainActor
 final class PlayerModel: ObservableObject {
     @Published var source: URL?
     @Published private(set) var tapeHeaders: [TapeHeader] = []
-    @Published private(set) var selectedRecord: Int?
+    @Published private(set) var selectedRecords: Set<Int> = []
     private var tapeImage: Data?
     @Published var devices: [OutputDevice] = []
     @Published var selectedUID = ""
-    @Published var conventional = true
+    @Published var conventional = false
     @Published var inverted = false
+    @Published var recordTransition: RecordTransition = .confirm
+    @Published private(set) var nextRecordPrompt: String?
+    @Published private(set) var gapDeadline: TimeInterval?
+    private var pendingRecords: ArraySlice<Int> = []
+    private var currentRecord: Int?
+    private var playbackToken = UUID()
     @Published var volume: Float = 0.5
     @Published var monitorMuted = false
     @Published var monitorDecibels: Double = -70
@@ -64,7 +77,7 @@ final class PlayerModel: ObservableObject {
     private var hardwareAddress = AudioDevices.property(kAudioHardwarePropertyDevices)
     private var hardwareListener: AudioObjectPropertyListenerBlock?
 
-    var active: Bool { playing || paused }
+    var active: Bool { playing || paused || gapDeadline != nil || nextRecordPrompt != nil }
     var monitorAvailable: Bool {
         guard defaultOutputID != 0,
               let selected = devices.first(where: { $0.uid == selectedUID }) else { return false }
@@ -135,7 +148,7 @@ final class PlayerModel: ObservableObject {
             let headers = try TapeHeader.records(in: image)
             stop()
             tapeImage = image
-            selectedRecord = nil
+            selectedRecords = Set(headers.indices)
             tapeHeaders = headers
             source = url
         } catch {
@@ -146,16 +159,44 @@ final class PlayerModel: ObservableObject {
         status = "Ready. Set the Sharp to load from tape, then press Play."
     }
 
-    func selectRecord(_ index: Int?) {
-        guard !active, !busy, index.map(tapeHeaders.indices.contains) ?? true else { return }
-        selectedRecord = index
+    func setRecord(_ index: Int, checked: Bool) {
+        guard !active, !busy, tapeHeaders.indices.contains(index) else { return }
+        if checked { selectedRecords.insert(index) }
+        else { selectedRecords.remove(index) }
+        resetSelectionProgress()
+    }
+
+    func selectWholeTape() {
+        guard !active, !busy else { return }
+        selectedRecords = Set(tapeHeaders.indices)
+        resetSelectionProgress()
+    }
+
+    var wholeTapeSelected: Bool { !tapeHeaders.isEmpty && selectedRecords.count == tapeHeaders.count }
+
+    private func resetSelectionProgress() {
         duration = 0
         elapsed = 0
-        status = index.map { "Ready to play record \($0 + 1)." } ?? "Ready to play the whole tape."
+        status = selectedRecords.isEmpty ? "Check at least one record to play." : "Ready to play \(selectionDescription)."
+    }
+
+    private var selectionDescription: String {
+        if wholeTapeSelected { return "the whole tape" }
+        if selectedRecords.count == 1, let index = selectedRecords.first { return "record \(index + 1)" }
+        return "\(selectedRecords.count) selected records"
+    }
+
+    var playButtonTitle: String {
+        if paused { return "Resume" }
+        if wholeTapeSelected { return tapeHeaders.count > 1 ? "Play Whole Tape" : "Play" }
+        if selectedRecords.isEmpty { return "Play" }
+        if selectedRecords.count == 1, let index = selectedRecords.first { return "Play Record \(index + 1)" }
+        return "Play \(selectedRecords.count) Records"
     }
 
     private var playbackStatus: String {
-        selectedRecord.map { "Playing record \($0 + 1)." } ?? "Playing tape."
+        if let currentRecord { return "Playing record \(currentRecord + 1)." }
+        return selectedRecords.isEmpty ? "Playing tape." : "Playing \(selectionDescription)."
     }
 
     func play() {
@@ -171,20 +212,39 @@ final class PlayerModel: ObservableObject {
             } catch { stop(); errorMessage = error.localizedDescription }
             return
         }
-        guard !busy, !playing, let tapeImage else { return }
+        guard !busy, !active, tapeImage != nil, !selectedRecords.isEmpty else { return }
+        pendingRecords = selectedRecords.sorted()[...]
+        startNextRecord()
+    }
+
+    func continueAfterRecord() {
+        guard nextRecordPrompt != nil else { return }
+        nextRecordPrompt = nil
+        startNextRecord()
+    }
+
+    private func startNextRecord() {
+        guard let image = tapeImage, let index = pendingRecords.popFirst() else { return }
+        currentRecord = index
+        startPlayback(image[tapeHeaders[index].recordRange])
+    }
+
+    private func startPlayback(_ data: Data) {
         guard let device = devices.first(where: { $0.uid == selectedUID }) else {
+            stop()
             errorMessage = "Choose an available output device."
             return
         }
         busy = true
         status = "Preparing tape audio…"
-        let data = selectedRecord.map { tapeImage[tapeHeaders[$0].recordRange] } ?? tapeImage
+        let token = playbackToken
         let conventional = conventional, inverted = inverted
         Task {
             do {
                 let tape = try await Task.detached(priority: .userInitiated) {
                     try prepareTape(data, conventional: conventional, inverted: inverted)
                 }.value
+                guard token == playbackToken else { return }
                 // Resolve the UID again because hardware IDs can change during conversion.
                 guard let current = AudioDevices.outputs().first(where: { $0.uid == device.uid }) else {
                     throw PlayerError(message: "The selected output device was disconnected.")
@@ -192,6 +252,7 @@ final class PlayerModel: ObservableObject {
                 try startAudio(tape, device: current.id)
                 status = playbackStatus
             } catch {
+                guard token == playbackToken else { return }
                 stop()
                 errorMessage = error.localizedDescription
                 status = "Playback could not start."
@@ -237,17 +298,29 @@ final class PlayerModel: ObservableObject {
     func pause() {
         guard playing else { return }
         updatePosition()
+        guard playing else { return }
         engine?.pause(); monitorEngine?.pause(); playing = false; paused = true
         status = "Paused. Resume to continue, or Stop to rewind."
     }
 
     func stop() {
+        playbackToken = UUID()
+        busy = false
+        pendingRecords = []
+        currentRecord = nil
+        gapDeadline = nil
+        nextRecordPrompt = nil
+        stopAudio()
+        elapsed = 0
+        status = source == nil ? "Choose an MZT or MZF tape image to begin." : "Stopped. Play restarts from the beginning."
+    }
+
+    private func stopAudio() {
         monitorEngine?.stop(); monitorEngine = nil; monitorDevice = nil
         engine?.stop()
         tapeDevice = nil
-        playing = false; paused = false; elapsed = 0
+        playing = false; paused = false
         sourceNode = nil; engine = nil; stream = nil; completionDeadline = nil
-        status = source == nil ? "Choose an MZT or MZF tape image to begin." : "Stopped. Play restarts from the beginning."
     }
 
     func setVolume() { engine?.mainMixerNode.outputVolume = volume }
@@ -289,7 +362,33 @@ final class PlayerModel: ObservableObject {
         }
     }
 
+    private func finishRecordOrTape() {
+        guard let next = pendingRecords.first else {
+            let length = duration
+            stop()
+            elapsed = length
+            status = "Playback complete."
+            return
+        }
+        stopAudio()
+        elapsed = duration
+        let label = "record \(next + 1): \(tapeHeaders[next].filename ?? "(unnamed)")"
+        switch recordTransition {
+        case .timed:
+            gapDeadline = ProcessInfo.processInfo.systemUptime + 5
+            status = "Waiting five seconds before \(label)."
+        case .confirm:
+            nextRecordPrompt = "Next is \(label). Continue when the Sharp is ready."
+            status = "Waiting for you to continue."
+        }
+    }
+
     private func updatePosition() {
+        if let deadline = gapDeadline, ProcessInfo.processInfo.systemUptime >= deadline {
+            gapDeadline = nil
+            startNextRecord()
+            return
+        }
         guard playing, let stream else { return }
         let rendered = Double(stream.playedFrames) / Double(mzt_sample_rate())
         let latency = engine?.outputNode.presentationLatency ?? 0
@@ -300,8 +399,7 @@ final class PlayerModel: ObservableObject {
                 // Let the last generated buffer reach the output before stopping the engine.
                 completionDeadline = now + max(0.2, latency + 0.1)
             } else if now >= completionDeadline! {
-                let length = duration
-                stop(); elapsed = length; status = "Playback complete."
+                finishRecordOrTape()
             }
         }
     }

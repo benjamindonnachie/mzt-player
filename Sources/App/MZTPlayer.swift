@@ -11,21 +11,21 @@ struct MZTPlayerApp: App {
         let arguments = CommandLine.arguments
         if arguments.count >= 2, arguments[1] == "--check" {
             do {
-                guard arguments.count == 3 || (arguments.count == 5 && arguments[3] == "--record") else {
-                    throw PlayerError(message: "Usage: --check <tape image> [--record <number>]")
+                guard arguments.count >= 3, (arguments.count - 3).isMultiple(of: 2) else {
+                    throw PlayerError(message: "Usage: --check <tape image> [--record <number>]…")
                 }
                 let url = URL(fileURLWithPath: arguments[2])
                 let data = try TapeHeader.readImage(from: url)
                 let headers = try TapeHeader.records(in: data)
-                let playbackData: Data
-                if arguments.count == 5 {
-                    guard let number = Int(arguments[4]), (1...headers.count).contains(number) else {
-                        throw PlayerError(message: "Choose a record number from 1 to \(headers.count).")
+                var selected: Set<Int> = []
+                for index in stride(from: 3, to: arguments.count, by: 2) {
+                    guard arguments[index] == "--record",
+                          let number = Int(arguments[index + 1]), (1...headers.count).contains(number) else {
+                        throw PlayerError(message: "Use --record with a record number from 1 to \(headers.count).")
                     }
-                    playbackData = data[headers[number - 1].recordRange]
-                } else {
-                    playbackData = data
+                    selected.insert(number - 1)
                 }
+                let playbackData = TapeHeader.playbackData(in: data, records: headers, selected: arguments.count == 3 ? Set(headers.indices) : selected)
                 let tape = try prepareTape(playbackData, conventional: true, inverted: false)
                 for (index, header) in headers.enumerated() {
                     print("Tape record \(index + 1): \(header.filename ?? "(unnamed)") | \(header.typeDescription)")
@@ -53,7 +53,7 @@ struct MZTPlayerApp: App {
                 Button("About MZT Player") {
                     NSApplication.shared.orderFrontStandardAboutPanel(options: [
                         .applicationName: "MZT Player",
-                        .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.4.0",
+                        .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.5.0",
                         .credits: NSAttributedString(string: "Tape encoding implemented from the documented Sharp MZ PWM format.\nProtocol references are included with the source.")
                     ])
                 }
@@ -70,14 +70,18 @@ struct PlayerView: View {
         return String(format: "%02d:%02d", total / 60, total % 60)
     }
 
-    private func recordDetails(_ header: TapeHeader, number: Int) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Record \(number): \(header.filename ?? "(unnamed)")")
-                .font(.callout.weight(.medium))
-            Text(header.typeDescription).font(.caption)
-            Text(header.loadingHint).font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+    private func recordTitle(_ header: TapeHeader, number: Int) -> some View {
+        Text("Record \(number): \(header.filename ?? "(unnamed)")")
+            .font(.callout.weight(.medium))
+    }
+
+    private func recordMetadata(_ header: TapeHeader) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Type: \(header.typeDescription)").font(.caption)
+            Text("Loading: \(header.loadingHint)").font(.callout)
         }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     var body: some View {
@@ -93,54 +97,56 @@ struct PlayerView: View {
                 Spacer()
             }
             GroupBox {
-                HStack(spacing: 14) {
-                    Image(systemName: "doc").font(.title2).foregroundStyle(.secondary).accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(model.source?.lastPathComponent ?? "No tape selected")
-                            .fontWeight(.medium).lineLimit(2).id(model.source)
-                        Text(model.source?.deletingLastPathComponent().path ?? "Select an .mzt or .mzf file")
-                            .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                    }
-                    Spacer()
-                    Button("Choose File…", action: model.chooseFile).disabled(model.busy)
-                }.padding(10)
-                if model.tapeHeaders.count > 1 {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Tape records (\(model.tapeHeaders.count))").font(.callout.weight(.medium))
-                            Spacer()
-                            Button(model.selectedRecord == nil ? "Whole tape selected" : "Select whole tape") {
-                                model.selectRecord(nil)
-                            }.disabled(model.active || model.busy || model.selectedRecord == nil)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 14) {
+                        Image(systemName: "doc").font(.title2).foregroundStyle(.secondary).accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(model.source?.lastPathComponent ?? "No tape selected")
+                                .fontWeight(.medium).lineLimit(2).id(model.source)
+                            Text(model.source?.deletingLastPathComponent().path ?? "Select an .mzt or .mzf file")
+                                .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                         }
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 10) {
-                                ForEach(model.tapeHeaders.indices, id: \.self) { index in
-                                    Button {
-                                        model.selectRecord(index)
-                                    } label: {
-                                        HStack(alignment: .top, spacing: 10) {
-                                            Image(systemName: model.selectedRecord == index ? "largecircle.fill.circle" : "circle")
-                                                .accessibilityHidden(true)
-                                            recordDetails(model.tapeHeaders[index], number: index + 1)
-                                            Spacer(minLength: 0)
+                        Spacer()
+                        Button("Choose File…", action: model.chooseFile).disabled(model.busy)
+                    }.padding(10)
+                    if model.tapeHeaders.count > 1 {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Tape records (\(model.tapeHeaders.count))").font(.callout.weight(.medium))
+                                Spacer()
+                                Button(model.wholeTapeSelected ? "Whole tape selected" : "Select whole tape") {
+                                    model.selectWholeTape()
+                                }.disabled(model.active || model.busy || model.wholeTapeSelected)
+                            }
+                            ScrollView {
+                                LazyVStack(alignment: .leading, spacing: 10) {
+                                    ForEach(model.tapeHeaders.indices, id: \.self) { index in
+                                        let header = model.tapeHeaders[index]
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            Toggle(isOn: Binding(
+                                                get: { model.selectedRecords.contains(index) },
+                                                set: { model.setRecord(index, checked: $0) }
+                                            )) {
+                                                recordTitle(header, number: index + 1)
+                                            }
+                                            .toggleStyle(.checkbox)
+                                            .disabled(model.active || model.busy)
+                                            recordMetadata(header).padding(.leading, 23)
                                         }
-                                        .padding(6)
-                                        .contentShape(Rectangle())
-                                        .background(model.selectedRecord == index ? Color.accentColor.opacity(0.16) : Color.clear,
+                                        .padding(7)
+                                        .background(model.selectedRecords.contains(index) ? Color.accentColor.opacity(0.16) : Color.clear,
                                                     in: RoundedRectangle(cornerRadius: 6))
                                     }
-                                    .buttonStyle(.plain)
-                                    .accessibilityAddTraits(model.selectedRecord == index ? .isSelected : [])
-                                    .disabled(model.active || model.busy)
-                                }
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }.frame(height: 144).id(model.source)
-                    }.padding(10)
-                } else if let header = model.tapeHeaders.first {
-                    recordDetails(header, number: 1)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                            }.frame(height: 168).id(model.source)
+                        }.padding(10)
+                    } else if let header = model.tapeHeaders.first {
+                        VStack(alignment: .leading, spacing: 5) {
+                            recordTitle(header, number: 1)
+                            recordMetadata(header)
+                        }.padding(10)
+                    }
                 }
             }
             VStack(alignment: .leading, spacing: 10) {
@@ -168,6 +174,11 @@ struct PlayerView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Toggle("Reverse polarity", isOn: $model.inverted).padding(.top, 30)
+            }.disabled(model.active || model.busy)
+            Picker("Between records", selection: $model.recordTransition) {
+                ForEach(RecordTransition.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
             }.disabled(model.active || model.busy)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 12) {
@@ -197,11 +208,11 @@ struct PlayerView: View {
                 }.font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
             }
             HStack(spacing: 12) {
-                Button(model.paused ? "Resume" : model.selectedRecord.map { "Play Record \($0 + 1)" } ?? "Play") { model.play() }
+                Button(model.playButtonTitle) { model.play() }
                     .buttonStyle(.borderedProminent).keyboardShortcut(.space, modifiers: [])
-                    .disabled(model.source == nil || model.selectedUID.isEmpty || model.playing || model.busy)
+                    .disabled(model.source == nil || model.selectedRecords.isEmpty || model.selectedUID.isEmpty || (model.active && !model.paused) || model.busy)
                 Button("Pause", action: model.pause).disabled(!model.playing)
-                Button("Stop", action: model.stop).disabled(!model.active)
+                Button("Stop", action: model.stop).disabled(!model.active && !model.busy)
                 Spacer()
                 Text("Level").foregroundStyle(.secondary)
                 Slider(value: $model.volume, in: 0...1).frame(width: 110)
@@ -216,6 +227,14 @@ struct PlayerView: View {
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(28).frame(width: 640)
+        .alert("Ready for the next record?", isPresented: Binding(
+            get: { model.nextRecordPrompt != nil }, set: { _ in }
+        )) {
+            Button("Continue", action: model.continueAfterRecord)
+            Button("Stop", role: .cancel, action: model.stop)
+        } message: {
+            Text(model.nextRecordPrompt ?? "")
+        }
         .alert("MZT Player", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK") { model.errorMessage = nil }
         } message: { Text(model.errorMessage ?? "") }

@@ -4,7 +4,7 @@ Native macOS interface for playing Sharp MZT/MZF cassette images through a chose
 
 ## Run
 
-For Apple Silicon Macs, download `MZT-Player-1.4.0-macOS-arm64.zip` from the repository's Releases page. Extract it and move **MZT Player.app** to Applications. The release includes `SHA256SUMS.txt` for checking the archive.
+For Apple Silicon Macs, download `MZT-Player-1.5.0-macOS-arm64.zip` from the repository's Releases page. Extract it and move **MZT Player.app** to Applications. The release includes `SHA256SUMS.txt` for checking the archive.
 
 For a local build, run `./build.sh` and open `build/MZT Player.app`. `build/MZT Player.zip` is packaged before copying into a cloud-backed folder, avoiding Finder metadata that can interfere with signature verification.
 
@@ -13,11 +13,13 @@ For a local build, run `./build.sh` and open `build/MZT Player.app`. `build/MZT 
 3. Set the Sharp to load from tape, then press Play.
 4. Adjust **Level** to suit the cassette interface. It starts at 50%.
 
-The file panel lists every tape record in order, showing its embedded name, declared type and loading hint. For a multi-record image, select a row and click **Play Record** to start at that record and stop at its end. Choose **Select whole tape** to restore sequential playback. Machine-code records usually load from the ROM monitor. BASIC program records need a compatible interpreter first; data records and unknown types do not imply a direct loader. The type describes the header's declared format and does not establish compatibility with a particular Sharp model or BASIC version. Bytes outside printable ASCII in the tape name are shown in hexadecimal.
+The file panel lists every tape record in order, showing its embedded name, declared type and loading hint. All records are checked when an image opens. **Play Whole Tape** plays them in tape order. Uncheck any records you want to skip; if none are checked, playback is disabled. **Select whole tape** checks every record again. Machine-code records usually load from the ROM monitor. BASIC program records need a compatible interpreter first; data records and unknown types do not imply a direct loader. The type describes the header's declared format and does not establish compatibility with a particular Sharp model or BASIC version. Bytes outside printable ASCII in the tape name are shown in hexadecimal.
+
+By default, **Between records** asks before the next record, with **Continue** and **Stop** in the dialogue. Choose **Wait 5 seconds** to continue automatically after a five-second gap. The wait applies between records actually being played, including checked selections. There is no wait before the first record or after the last.
 
 Pause preserves encoder position. Stop rewinds. Pausing within a block can disrupt the Sharp's loader, so restart the load if necessary.
 
-**Conventional** uses documented leaders and duplicate header/data blocks. **Short transfer** uses single copies and shorter, application-defined leaders. Both use the documented MZ-700 PWM timing profile. The polarity switch accommodates interfaces that invert the signal. Turbo loaders and speed corrections are not included.
+**Conventional** uses documented leaders and duplicate header/data blocks. **Short transfer** is the app default and uses single copies and shorter, application-defined leaders. Both use the documented MZ-700 PWM timing profile. The polarity switch accommodates interfaces that invert the signal. Turbo loaders and speed corrections are not included.
 
 ## Quiet monitor
 

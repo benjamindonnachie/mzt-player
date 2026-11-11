@@ -52,6 +52,15 @@ struct TapeHeader {
         return records
     }
 
+    static func playbackData(in image: Data, records: [TapeHeader], selected: Set<Int>) -> Data {
+        if selected.count == records.count { return image }
+        var data = Data()
+        for index in selected.sorted() {
+            data.append(image[records[index].recordRange])
+        }
+        return data
+    }
+
     private static func invalidImage(_ message: String) -> CocoaError {
         CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: message])
     }
