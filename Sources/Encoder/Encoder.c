@@ -130,10 +130,10 @@ MZTTape *mzt_create(const unsigned char *data, size_t length, int conventional,
     plan->inverted = inverted != 0;
     for (size_t offset = 0; offset < length;) {
         size_t payload = data[offset+18] + 256u * data[offset+19];
-        // Single-copy leaders are application choices: at least two seconds
-        // before the header and one second before the body, rounded up in pulses.
-        append_block(plan, offset, HEADER_BYTES, 40, conventional ? 22000 : 3969, conventional);
-        append_block(plan, offset+HEADER_BYTES, payload, 20, conventional ? 11000 : 1985, conventional);
+        // Allow for the monitor motor-start delay before both tape markers.
+        // 5,953 SHORT pulses at 504 microseconds give just over three seconds.
+        append_block(plan, offset, HEADER_BYTES, 40, conventional ? 22000 : 5953, conventional);
+        append_block(plan, offset+HEADER_BYTES, payload, 20, conventional ? 11000 : 5953, conventional);
         offset += HEADER_BYTES + payload;
     }
     plan->frames = sample_boundary(plan->duration_us);

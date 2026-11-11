@@ -76,8 +76,8 @@ class TapeDecoder:
         body_size = struct.unpack_from('<H', data, 18)[0]
         header, body = data[:128], data[128:128+body_size]
         for payload, mark, leader in (
-            (header, 40, 22000 if duplicated else 3969),
-            (body, 20, 11000 if duplicated else 1985),
+            (header, 40, 22000 if duplicated else 5953),
+            (body, 20, 11000 if duplicated else 5953),
         ):
             self.pulses(0, leader)
             self.pulses(1, mark)
@@ -199,7 +199,7 @@ class EncoderTests(unittest.TestCase):
                     header_sum = h_ones % 65536
                     h_bits_ones = h_ones + header_sum.bit_count()
                     h_us = (130+h_bits_ones+1)*958 + (8*130-h_bits_ones)*504
-                    before_us = (3969+1985)*504 + (40+20)*(958+504) + 2*958 + h_us + count*9*958
+                    before_us = (5953+5953)*504 + (40+20)*(958+504) + 2*958 + h_us + count*9*958
                     self.assertEqual(total, nearest_frame(before_us+tail_us))
                     copy = self.lib.mzt_copy_at_frame(tape, nearest_frame(before_us))
                     try:

@@ -1,4 +1,4 @@
-MZT Player 1.5.0
+MZT Player 1.5.1
 
 The current tape encoder is implemented from the documented Sharp MZ PWM
 protocol. No third-party tape converter source or executable is included or

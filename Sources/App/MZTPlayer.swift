@@ -53,7 +53,7 @@ struct MZTPlayerApp: App {
                 Button("About MZT Player") {
                     NSApplication.shared.orderFrontStandardAboutPanel(options: [
                         .applicationName: "MZT Player",
-                        .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.5.0",
+                        .applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.5.1",
                         .credits: NSAttributedString(string: "Tape encoding implemented from the documented Sharp MZ PWM format.\nProtocol references are included with the source.")
                     ])
                 }
