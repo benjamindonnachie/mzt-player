@@ -102,10 +102,14 @@ final class PlayerModel: ObservableObject {
             Task { @MainActor in
                 guard let self, let changed = note.object as? AVAudioEngine, self.active else { return }
                 if changed === self.engine {
+                    if let expected = self.tapeDevice,
+                       AudioOutputRouting.isRunning(changed, on: expected) { return }
                     self.stop()
                     self.status = "Audio configuration changed. Check the output device, then press Play to restart."
                     self.refreshDevices()
                 } else if changed === self.monitorEngine {
+                    if let expected = self.monitorDevice,
+                       AudioOutputRouting.isRunning(changed, on: expected) { return }
                     self.monitorEngine?.stop(); self.monitorEngine = nil; self.monitorDevice = nil
                     self.monitorStatus = "Local monitor interrupted. Toggle its mute control to reconnect."
                 }
@@ -204,8 +208,12 @@ final class PlayerModel: ObservableObject {
         if paused {
             do {
                 try engine?.start()
+                if let engine, let tapeDevice { try AudioOutputRouting.validate(engine, device: tapeDevice) }
                 paused = false; playing = true; status = playbackStatus
-                do { try monitorEngine?.start() }
+                do {
+                    try monitorEngine?.start()
+                    if let monitorEngine, let monitorDevice { try AudioOutputRouting.validate(monitorEngine, device: monitorDevice) }
+                }
                 catch {
                     monitorEngine?.stop(); monitorEngine = nil; monitorDevice = nil
                     monitorStatus = "Local monitor could not resume: \(error.localizedDescription)"
@@ -264,13 +272,7 @@ final class PlayerModel: ObservableObject {
 
     private func makeEngine(_ tape: TapeStream, device: AudioDeviceID, level: Float) throws -> (AVAudioEngine, AVAudioSourceNode) {
         let engine = AVAudioEngine()
-        guard let unit = engine.outputNode.audioUnit else { throw PlayerError(message: "The audio output unit is unavailable.") }
-        var id = device
-        let result = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
-                                         kAudioUnitScope_Global, 0, &id, UInt32(MemoryLayout.size(ofValue: id)))
-        guard result == noErr else { throw PlayerError(message: "Cannot use the selected output device (Core Audio error \(result)).") }
-        let outputFormat = engine.outputNode.outputFormat(forBus: 0)
-        guard outputFormat.sampleRate > 0, outputFormat.channelCount > 0 else { throw PlayerError(message: "The output device has no usable audio format.") }
+        try AudioOutputRouting.configure(engine, device: device)
         let format = AVAudioFormat(standardFormatWithSampleRate: Double(mzt_sample_rate()), channels: 1)!
         let source = AVAudioSourceNode(format: format) { isSilence, _, count, list in
             let buffers = UnsafeMutableAudioBufferListPointer(list)
@@ -283,6 +285,7 @@ final class PlayerModel: ObservableObject {
         engine.connect(source, to: engine.mainMixerNode, format: format)
         engine.mainMixerNode.outputVolume = level
         engine.prepare()
+        try AudioOutputRouting.validate(engine, device: device)
         return (engine, source)
     }
 
@@ -292,6 +295,7 @@ final class PlayerModel: ObservableObject {
         duration = Double(tape.totalFrames) / Double(mzt_sample_rate())
         elapsed = 0; completionDeadline = nil
         try engine.start()
+        try AudioOutputRouting.validate(engine, device: device)
         playing = true; paused = false
         syncMonitor()
     }
@@ -355,7 +359,10 @@ final class PlayerModel: ObservableObject {
             let copy = TapeStream(handle)
             let (monitor, _) = try makeEngine(copy, device: defaultDevice, level: monitorGain)
             monitorEngine = monitor; monitorDevice = defaultDevice
-            if playing { try monitor.start() }
+            if playing {
+                try monitor.start()
+                try AudioOutputRouting.validate(monitor, device: defaultDevice)
+            }
             monitorStatus = "Quiet monitor: \(AudioDevices.outputs().first(where: { $0.id == defaultDevice })?.name ?? "default output")."
         } catch {
             monitorEngine?.stop(); monitorEngine = nil; monitorDevice = nil

@@ -4,7 +4,7 @@ Native macOS interface for playing Sharp MZT/MZF cassette images through a chose
 
 ## Run
 
-For Apple Silicon Macs, download `MZT-Player-1.6.0-macOS-arm64.zip` from the repository's Releases page. Extract it and move **MZT Player.app** to Applications. The release includes `SHA256SUMS.txt` for checking the archive.
+For Apple Silicon Macs, download `MZT-Player-1.6.1-macOS-arm64.zip` from the repository's Releases page. Extract it and move **MZT Player.app** to Applications. The release includes `SHA256SUMS.txt` for checking the archive.
 
 For a local build, run `./build.sh` and open `build/MZT Player.app`. `build/MZT Player.zip` is packaged before copying into a cloud-backed folder, avoiding Finder metadata that can interfere with signature verification.
 
@@ -31,7 +31,7 @@ When the selected tape output differs from the macOS default output, a separate 
 
 The monitor's **Mute** control stops its engine without stopping the tape output. Unmuting starts a new monitor cursor at the current tape position. No monitor engine is opened if playback begins with the monitor muted. If both outputs refer to the same device, the monitor is skipped and both monitor controls are disabled. Controls update when the default or selected tape output changes.
 
-Changing the macOS default output moves the monitor while leaving the selected tape output in place. Disconnecting the tape output stops playback. A configuration change affecting the tape engine also stops playback rather than moving the tape signal elsewhere.
+Changing the macOS default output moves the monitor while leaving the selected tape output in place. Disconnecting the tape output stops playback. A configuration change that stops the tape engine or invalidates the selected route stops playback rather than moving the tape signal elsewhere. Harmless startup notifications are ignored when the selected output is still running with the correct format.
 
 The two devices have independent clocks and buffering. The monitor is an audible indication of progress, not a phase-synchronised second cassette output.
 
@@ -67,7 +67,9 @@ A read-only diagnostic validates an image and lists audio outputs without openin
 "build/MZT Player.app/Contents/MacOS/MZTPlayer" --check /path/to/image.mzt
 ```
 
-Earlier GUI playback controls were checked on muted built-in speakers. Live dual-device monitoring and physical loading with the replacement timing implementation remain unverified. The USB audio interface is not used for automated playback tests.
+Hardware integration checks have verified playback, independent monitoring and pause/resume to a Bluetooth output while a different device remained the system default. These tests used zero output gains. Short Transfer loading was also confirmed by the user on physical hardware. The USB audio interface is not used for automated playback tests.
+
+For a silent hardware-routing check, run `./Tests/check_audio_routing.sh "<output UID>"` with a connected output that differs from the system default. The check opens the selected device and the default monitor with both gains at zero, verifies playback and pause/resume, and checks that the system default has not changed. It may need execution outside a restricted sandbox to access Core Audio. Device UIDs are listed by the `--check` diagnostic.
 
 ## Notices and history
 
